@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Узи · загрузка…</title>
+<link rel="icon" id="fav" href="face0.png">
+<style>
+:root{--bg:#120e18;--panel:#1c1626;--ink:#ece6f6;--dim:#a79bbd;--acc:#c46bff;--acc2:#8f4be0}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.65 "Segoe UI",system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(18,14,24,.92);border-bottom:1px solid #2c2340;backdrop-filter:blur(6px)}
+header img{width:30px;height:30px}
+header b{color:var(--acc);letter-spacing:.08em}
+header span{color:var(--dim);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{max-width:780px;margin:0 auto;padding:36px 24px 160px}
+h1{font-size:34px;line-height:1.2;margin:8px 0 14px}
+h2{font-size:23px;margin:34px 0 10px;color:#dcc8ff}
+p{margin:0 0 16px}
+.lead{color:var(--dim);font-size:14px;margin-bottom:26px}
+figure{margin:18px 0 26px}
+figure img{max-width:100%;max-height:420px;border-radius:14px;display:block}
+figcaption{color:var(--dim);font-size:14px;margin-top:8px}
+pre{background:#0c0911;border:1px solid #2c2340;border-radius:12px;padding:14px 16px;overflow:auto;font:14px/1.5 Consolas,monospace;color:#d9ccf5;white-space:pre-wrap}
+.btn{display:inline-block;margin:28px 0 0;padding:12px 24px;border-radius:999px;background:var(--acc2);color:#fff;font-weight:700;cursor:pointer;user-select:none;transition:transform .12s,background .12s}
+.btn:hover{background:var(--acc)}
+.btn.pressed{transform:translateY(4px) scale(.96)}
+footer{color:var(--dim);font-size:13px;margin-top:44px}
+footer a{color:var(--dim)}
+.note{background:var(--panel);border-radius:14px;padding:14px 18px;color:var(--dim)}
+.paper{background:#f7efe0;color:#3a2a1e;border-radius:6px;padding:30px 34px;font-family:"Segoe Print","Comic Sans MS",cursive;box-shadow:0 10px 40px #0008;transform:rotate(-.5deg)}
+.paper h1{color:#7a2350;font-size:30px}
+.paper p{border-bottom:1px dashed #d8c7a8;padding-bottom:10px}
+.txt{background:#fbfbfb;color:#222;border-radius:8px;padding:26px 30px;font:16px/1.7 Consolas,monospace}
+.txt h1{font:700 18px Consolas,monospace;color:#555}
+.search{background:#fff;color:#222;border-radius:16px;padding:26px 30px}
+.search .q{border:1px solid #ccc;border-radius:999px;padding:10px 20px;margin-bottom:22px;color:#333}
+.search h3{color:#3b2bb0;margin:16px 0 2px;font-size:19px}
+.search .u{color:#0a7a3a;font-size:13px}
+.search p{color:#555;font-size:15px}
+.fic{font-family:Georgia,serif;font-size:18px}
+.fic .tags{color:var(--dim);font-family:"Segoe UI",sans-serif;font-size:14px}
+#veil{position:fixed;inset:0;z-index:9;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(18,14,24,.55);backdrop-filter:blur(22px);font-size:30px;font-weight:800;color:#ff9ad5;text-align:center}
+#veil small{font-size:15px;color:var(--dim);font-weight:400;margin-top:12px}
+</style>
+</head>
+<body>
+<header><img id="hf" src="face0.png" alt=""><b>УЗИ</b><span id="hs">смотрит интернет</span></header>
+<main id="m"><p class="note">Загружаю…</p></main>
+<div id="veil"></div>
+<script>
+const T = '__TOKEN__', NAME = (__NAME__) || 'ты', SHY = __SHY__;
+const base = '/' + T + '/';
+const $ = s => document.querySelector(s);
+const m = $('#m');
+const rnd = a => a[Math.floor(Math.random() * a.length)];
+let seq = -1, mode = '', shame = 0, topic = '', lastSent = 0, dirty = true, pid = 0, closing = false;
+
+const WIKI = ['Рельсотрон', 'Юпитер', 'Экзопланета', 'Робот', 'Беспилотный летательный аппарат', 'Нейронная сеть', 'Солнечная вспышка',
+  'Чёрная дыра', 'Квантовый компьютер', 'Шейдер', 'Графический процессор', 'Андроид (робот)', 'Луна', 'Марс', 'Терраформирование',
+  'Искусственный интеллект', 'Робототехника', 'Три закона робототехники', 'Blender', 'Unreal Engine', 'Minecraft', 'Лазер',
+  'Сверхпроводимость', 'Нейтронная звезда', 'Титан (спутник)', 'Кибернетика', 'Электромагнит', 'Пиксельная графика', 'Медь'];
+const SO_TAGS = ['c++', 'opengl', 'glsl', 'java', 'python', 'javascript', 'minecraft', 'directx', 'game-development', 'shader'];
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function plat(e, type) { e.dataset.plat = type; e.dataset.pid = ++pid; return e; }
+function fill(s) { return s.replaceAll('{name}', NAME); }
+function setTitle(t) { topic = t; document.title = 'Узи · ' + t; $('#hs').textContent = t; }
+function setFace(n) { $('#fav').href = 'face' + n + '.png'; $('#hf').src = 'face' + n + '.png'; }
+function clear() { m.innerHTML = ''; pid = 0; window.scrollTo({top: 0, behavior: 'instant'}); }
+function addNext() { const b = plat(el('div', 'btn', 'Дальше →'), 3); b.onclick = () => openNext(); m.append(b); }
+function footer(text, link) {
+  const f = el('footer', null, text);
+  if (link) { const a = el('a', null, 'Оригинал'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; f.append(a); }
+  m.append(f);
+}
+function decode(s) { const t = document.createElement('textarea'); t.innerHTML = s; return t.value; }
+
+async function openWiki() {
+  const t = rnd(WIKI);
+  const r = await fetch('https://ru.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages|info&inprop=url&explaintext=1' +
+    '&exsectionformat=wiki&redirects=1&pithumbsize=640&format=json&origin=*&titles=' + encodeURIComponent(t));
+  const j = await r.json();
+  const pg = Object.values(j.query.pages)[0];
+  if (!pg || !pg.extract) throw new Error('empty');
+  clear(); mode = 'wiki'; shame = 0; setTitle(pg.title);
+  m.append(plat(el('h1', null, pg.title), 1));
+  m.append(el('div', 'lead', 'Википедия'));
+  if (pg.thumbnail) {
+    const f = el('figure'), im = el('img');
+    im.src = pg.thumbnail.source; im.alt = ''; im.onload = () => send(true);
+    f.append(plat(im, 2)); m.append(f);
+  }
+  const skip = /^(Примечания|Литература|Ссылки|См\. также|Источники|Комментарии)$/;
+  let total = 0, skipping = false;
+  for (const line of pg.extract.split('\n')) {
+    const s = line.trim(); if (!s) continue;
+    const h = s.match(/^=+\s*(.+?)\s*=+$/);
+    if (h) { skipping = skip.test(h[1]); if (!skipping && total < 9000) m.append(plat(el('h2', null, h[1]), 1)); continue; }
+    if (skipping || total > 9000) continue;
+    m.append(plat(el('p', null, s), 0)); total += s.length;
+  }
+  addNext(); footer('Текст из Википедии, лицензия CC BY-SA. ', pg.fullurl);
+}
+
+function renderHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  let n = 0;
+  for (const c of doc.body.children) {
+    if (n++ > 14) break;
+    const tag = c.tagName;
+    if (tag === 'PRE') m.append(plat(el('pre', null, c.textContent.slice(0, 1400)), 4));
+    else if (tag === 'UL' || tag === 'OL') { for (const li of c.querySelectorAll('li')) m.append(plat(el('p', null, '• ' + li.textContent.trim()), 0)); }
+    else if (/^H[1-6]$/.test(tag)) m.append(plat(el('h2', null, c.textContent), 1));
+    else { const t = c.textContent.trim(); if (t) m.append(plat(el('p', null, t), 0)); }
+  }
+}
+
+async function openSO() {
+  const tag = rnd(SO_TAGS);
+  const api = 'https://api.stackexchange.com/2.3/';
+  const j = await (await fetch(api + 'questions?order=desc&sort=votes&site=stackoverflow&filter=withbody&pagesize=30&page=' +
+    (1 + Math.floor(Math.random() * 8)) + '&tagged=' + encodeURIComponent(tag))).json();
+  const qs = (j.items || []).filter(q => q.is_answered);
+  if (!qs.length) throw new Error('empty');
+  const q = rnd(qs), title = decode(q.title);
+  clear(); mode = 'so'; shame = 0; setTitle(title);
+  m.append(plat(el('h1', null, title), 1));
+  m.append(el('div', 'lead', 'Stack Overflow · ' + q.tags.join(', ') + ' · ' + q.score + ' ▲'));
+  renderHtml(q.body);
+  try {
+    const a = await (await fetch(api + 'questions/' + q.question_id + '/answers?order=desc&sort=votes&site=stackoverflow&filter=withbody&pagesize=1')).json();
+    if (a.items && a.items[0]) { m.append(plat(el('h2', null, 'Лучший ответ · ' + a.items[0].score + ' ▲'), 1)); renderHtml(a.items[0].body); }
+  } catch (e) {}
+  addNext(); footer('Stack Overflow, лицензия CC BY-SA. ', q.link);
+}
+
+const CAT_CAPS = ['Этот похож на меня. Только без шапки.', 'Хочу такого. Кусали бы всех вместе.', 'Смотри, какой круглый!',
+  'Этот явно что-то замышляет.', 'Спит. Как я после зарядки.', 'Лапки. Ну всё, я пропала.'];
+function openCats() {
+  clear(); mode = 'cute'; shame = 1; setTitle('котики');
+  m.append(plat(el('h1', null, 'Котики. Просто котики.'), 1));
+  m.append(el('div', 'lead', 'фотографии котов, cataas.com'));
+  const caps = [...CAT_CAPS].sort(() => Math.random() - 0.5);
+  for (let i = 0; i < 4; i++) {
+    const f = el('figure'), im = el('img');
+    im.src = 'https://cataas.com/cat?width=520&r=' + Math.random().toString(36).slice(2);
+    im.alt = ''; im.onload = () => send(true); im.onerror = () => f.remove();
+    f.append(plat(im, 2)); f.append(el('figcaption', null, caps[i])); m.append(f);
+  }
+  addNext();
+}
+const FIC = [
+  'Над Медью-9 опять шёл снег, который на самом деле был пеплом. Узи сидела на краю крыши и делала вид, что ей совершенно не холодно.',
+  '— Ты опять тут, — сказал Н и сел рядом. Крылья он сложил аккуратно, будто боялся занять слишком много места.',
+  '— Я тут думаю. Это разные вещи, — буркнула Узи и поправила шапку.',
+  'Н кивнул так серьёзно, словно она сообщила ему военную тайну. Потом протянул ей тёплый аккумулятор: — Держи. Ты не мёрзнешь, я знаю.',
+  'Узи взяла. Просто потому что он всё равно не отстал бы. Совершенно не поэтому.',
+  'Они сидели молча и смотрели, как над кратером гаснут огни. И это было, пожалуй, лучшее молчание за всю неделю.'];
+function openFic() {
+  clear(); mode = 'cute'; shame = 1; setTitle('фанфик «Крыша бункера»');
+  const w = el('div', 'fic');
+  w.append(plat(el('h1', null, 'Крыша бункера'), 1));
+  w.append(el('p', 'tags', 'Фанфик · Дроны-убийцы · Узи/Н · рейтинг G · флафф'));
+  for (const s of FIC) w.append(plat(el('p', null, s), 0));
+  m.append(w); addNext();
+}
+
+const DIARY = [
+  'День 1. Поселилась на рабочем столе у {name}. Обои ничего. Иконок много. Подозрительно много.',
+  'День 2. {name} опять гладил меня курсором. Мне НЕ понравилось. (понравилось)',
+  'День 3. Пыталась утащить «Корзину». Тяжёлая. Внутри какие-то тайны.',
+  'День 4. Видела, как {name} открывал Blender. Он что, делает меня? Надеюсь, глаза получатся красивые. И шапка ровная.',
+  'День 5. Думала про Н. Просто так. Ничего такого. ЗАЧЕМ Я ЭТО ПИШУ.'];
+function openDiary() {
+  clear(); mode = 'shy'; shame = 2; setTitle('дневник.txt');
+  const w = el('div', 'paper');
+  w.append(plat(el('h1', null, 'Дневник Узи. НЕ ЧИТАТЬ!!!'), 1));
+  for (const s of DIARY) w.append(plat(el('p', null, fill(s)), 0));
+  m.append(w); addNext();
+}
+function openLetter() {
+  clear(); mode = 'shy'; shame = 2; setTitle('черновик_для_Н_НЕ_ОТПРАВЛЯТЬ.txt');
+  const w = el('div', 'txt');
+  w.append(plat(el('h1', null, 'черновик_для_Н_НЕ_ОТПРАВЛЯТЬ.txt'), 1));
+  for (const s of ['Н, привет.', 'Это не признание, если что. Просто хотела сказать, что ты нормальный. Для дрона-убийцы так вообще очень.',
+    'И когда ты улыбаешься, у меня визор перегревается. Это баг. Наверное.', 'Удалить. Удалить. УДАЛИТЬ.'])
+    w.append(plat(el('p', null, s), 0));
+  m.append(w); addNext();
+}
+function openSearch() {
+  clear(); mode = 'shy'; shame = 2; setTitle('как понять, что ты нравишься дрону');
+  const w = el('div', 'search');
+  w.append(plat(el('div', 'q', 'как понять, что ты нравишься дрону'), 1));
+  const res = [['Как понять, что ты нравишься дрону: 7 верных признаков', 'drone-advice.example', 'Признак №3: он отдаёт вам свой запасной аккумулятор…'],
+    ['Форум: мой дрон-убийца слишком милый, что делать?', 'forum.example', 'Ответов: 48. Лучший ответ: «Ничего. Смириться».'],
+    ['Почему визор перегревается рядом с кем-то? Отвечают инженеры', 'robo-help.example', 'Скорее всего, это не баг. Скорее всего, это чувства.'],
+    ['Тест: ты влюблена или это перегрев процессора?', 'tests.example', 'Пройдите тест из 12 вопросов. Результат вас смутит.']];
+  for (const [h, u, d] of res) { w.append(plat(el('h3', null, h), 1)); w.append(el('div', 'u', u)); w.append(plat(el('p', null, d), 0)); }
+  m.append(w); addNext();
+}
+
+const AWK = [
+  ['почему я краснею, когда хвалят', [['Почему мы краснеем от комплиментов: объясняет психолог', 'psy.example', 'Это нормально. Даже если вы дрон.'],
+    ['Форум: меня похвалили, и у меня перегрелся визор', 'forum.example', 'Ответов: 12. Лучший ответ: «Скажи спасибо и беги».']]],
+  ['фанфики про Узи Дорман', [['Фанфики: Узи Дорман (найдено 3 482)', 'fics.example', 'Вы уверены, что хотите это читать? Мы — нет.'],
+    ['«Узи и тайна рельсотрона», глава 47', 'fics.example', 'Узи посмотрела на закат и сказала что-то крутое...']]],
+  ['как перестать быть злой', [['10 способов стать добрее за неделю', 'self.example', 'Способ №1: не стрелять в людей из рельсотрона.'],
+    ['Злость — это нормально?', 'psy.example', 'Да. Но не по 12 часов в день.']]],
+  ['может ли дрон научиться танцевать', [['Танцы для начинающих роботов', 'dance.example', 'Урок 1: не наступайте на свои ноги. И на чужие.'],
+    ['Видео: дрон танцует под дождём (2 млн просмотров)', 'video.example', 'Комментарии: «у неё получится», «а у меня нет»']]],
+  ['10 часов котиков', [['10 часов котиков. Просто котики.', 'video.example', 'Без рекламы. Без смысла. Только котики.'],
+    ['Котики спят 10 часов (без звука)', 'video.example', 'Лучшее средство от плохого дня.']]],
+  ['как сделать вид, что я не плакала', [['Как быстро убрать следы слёз: 5 советов', 'life.example', 'Совет №2: сказать, что это смазка протекла.'],
+    ['Форум: я не плакала, это пыль', 'forum.example', 'Ответов: 31. Все пишут «конечно, пыль».']]],
+];
+function openAwkward() {
+  const [q, res] = rnd(AWK);
+  clear(); mode = 'shy'; shame = 2; setTitle(q);
+  const w = el('div', 'search');
+  w.append(plat(el('div', 'q', q), 1));
+  for (const [h, u, d] of res) { w.append(plat(el('h3', null, h), 1)); w.append(el('div', 'u', u)); w.append(plat(el('p', null, d), 0)); }
+  m.append(w); addNext();
+}
+
+function pickKind() {
+  const r = Math.random();
+  if (SHY && r < 0.16) return 'shy';
+  if (r < 0.36) return 'cute';
+  if (r < 0.68) return 'wiki';
+  return 'so';
+}
+async function openNext(kind) {
+  kind = kind || pickKind();
+  try {
+    if (kind === 'wiki') await openWiki();
+    else if (kind === 'so') await openSO();
+    else if (kind === 'cute') (Math.random() < 0.6 ? openCats : openFic)();
+    else rnd([openDiary, openLetter, openSearch, openAwkward, openAwkward])();
+  } catch (e) {
+    try { kind === 'wiki' ? openSO() : openFic(); } catch (_) { openFic(); }
+  }
+  setFace(shame === 2 ? 2 : 0);
+  send(true);
+}
+
+function collect() {
+  const vh = innerHeight, out = [];
+  for (const e of document.querySelectorAll('[data-pid]')) {
+    const r = e.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > vh || r.width < 30) continue;
+    out.push([+e.dataset.pid, Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height), +e.dataset.plat]);
+    if (out.length > 60) break;
+  }
+  return out;
+}
+function send(force) {
+  const now = Date.now();
+  if (!force && now - lastSent < 50) { if (!dirty) setTimeout(() => { if (dirty) send(true); }, 60); dirty = true; return; }
+  lastSent = now; dirty = false;
+  const de = document.documentElement;
+  const body = JSON.stringify({visible: !document.hidden, focused: document.hasFocus(), iw: innerWidth, ih: innerHeight,
+    dpr: devicePixelRatio, sy: scrollY, sh: de.scrollHeight, cw: de.clientWidth, mode, shame, topic, title: document.title, els: collect()});
+  fetch(base + 'state', {method: 'POST', body, keepalive: true}).catch(() => {});
+}
+function run(c) {
+  if (c.c === 'scroll') window.scrollBy({top: c.dy, behavior: 'smooth'});
+  else if (c.c === 'next' || c.c === 'open') openNext(c.k);
+  else if (c.c === 'press') {
+    const e = document.querySelector('[data-pid="' + c.id + '"]');
+    if (e) { e.classList.add('pressed'); setTimeout(() => { e.classList.remove('pressed'); if (e.classList.contains('btn')) e.click(); }, 220); }
+  } else if (c.c === 'hide') {
+    const v = $('#veil'); v.innerHTML = 'НЕ СМОТРИ!!!'; v.style.display = 'flex';
+    setTimeout(async () => { await openNext('wiki'); v.style.display = 'none'; }, 900);
+  } else if (c.c === 'leave') {
+    closing = true; mode = 'bye'; setTitle('ушла');
+    const v = $('#veil'); v.innerHTML = 'Узи ушла на рабочий стол<small>вкладку можно закрыть</small>'; v.style.display = 'flex';
+    send(true); setTimeout(() => window.close(), 1600);
+  } else if (c.c === 'face') setFace(c.n);
+}
+async function poll() {
+  try {
+    const j = await (await fetch(base + 'poll?since=' + seq)).json();
+    if (seq >= 0) for (const c of j.cmds) run(c);
+    seq = j.seq;
+  } catch (e) {}
+  setTimeout(poll, document.hidden ? 1500 : 150);
+}
+function beat() { send(true); setTimeout(beat, document.hidden ? 4000 : 800); }
+
+addEventListener('scroll', () => send());
+addEventListener('resize', () => send(true));
+addEventListener('focus', () => send(true));
+addEventListener('blur', () => send(true));
+document.addEventListener('visibilitychange', () => send(true));
+addEventListener('pagehide', () => { if (!closing) navigator.sendBeacon(base + 'state', JSON.stringify({closed: true})); });
+setInterval(() => { if (document.hidden && shame < 2) { setFace(1); setTimeout(() => setFace(0), 250); } }, 5200);
+
+openNext('wiki');
+poll();
+beat();
+</script>
+</body>
+</html>

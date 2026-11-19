@@ -1,0 +1,19 @@
+{
+ "stages": [
+  "hate",
+  "good",
+  "warm",
+  "love"
+ ],
+ "fallback": {
+  "hate": [],
+  "good": [],
+  "warm": [
+   "good"
+  ],
+  "love": [
+   "warm",
+   "good"
+  ]
+ }
+}

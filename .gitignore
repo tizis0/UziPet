@@ -1,0 +1,15 @@
+/bin/
+/obj/
+/dist/
+/art/
+/docs/
+/tools/*
+!/tools/pack_assets.py
+!/tools/release.py
+__pycache__/
+/AGENT_INBOX.md
+/ATLAS.md
+/notes.txt
+/assets/phrases.json.bak-emote
+*.log
+token.json

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Узи в браузере",
+  "version": "1.1",
+  "description": "Даёт Узи с рабочего стола свою вкладку: она ищет, открывает и читает, а её страницы не остаются в истории. Работает только вместе с UziPet.",
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "history"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "face0.png",
+        "face1.png",
+        "face2.png",
+        "face3.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "icons": {
+    "48": "face3.png",
+    "128": "face3.png"
+  }
+}
