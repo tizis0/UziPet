@@ -141,6 +141,8 @@ public:
     void setGround(const Surf& s);
     void goWalk(float x, bool off = false);
     void goIdle(float minT = 4.f, float maxT = 9.f);
+    void scriptedPaceStep(float speed, bool acrossMonitors);
+    float scriptedWalkSpeed = 0;
 
     void lifeUpdate(float dt, const Input& in);
     bool lifeState(float dt, const Input& in);

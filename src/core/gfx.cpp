@@ -1,4 +1,63 @@
 #include "gfx.h"
+#include <d3d11.h>
+#include <shlwapi.h>
+
+ComPtr<IWICBitmapSource> Gfx::loadIcon(const std::wstring& path) {
+    if (path.ends_with(L".png")) return loadImage(path);
+    if (!path.ends_with(L".svg")) return {};
+    WIN32_FILE_ATTRIBUTE_DATA attrs{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs) ||
+        attrs.nFileSizeHigh || attrs.nFileSizeLow > 256 * 1024) return {};
+    std::string source;
+    if (!readFile(path, source) || source.empty() || source.size() > 256 * 1024) return {};
+
+    if (!svgContext) {
+        ComPtr<ID3D11Device> d3d;
+        ComPtr<IDXGIDevice> dxgi;
+        ComPtr<ID2D1Device> device;
+        ComPtr<ID2D1DeviceContext> context;
+        if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                                     nullptr, 0, D3D11_SDK_VERSION, &d3d, nullptr, nullptr)) ||
+            FAILED(d3d.As(&dxgi)) || FAILED(d2d->CreateDevice(dxgi.Get(), &device)) ||
+            FAILED(device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context)) ||
+            FAILED(context.As(&svgContext))) return {};
+    }
+
+    constexpr UINT size = 64;
+    ComPtr<IStream> stream;
+    stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(source.data()), (UINT)source.size()));
+    ComPtr<ID2D1SvgDocument> svg;
+    if (!stream || FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(size, size), &svg))) return {};
+    auto format = D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
+    auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET, format, 96, 96);
+    ComPtr<ID2D1Bitmap1> target, readback;
+    if (FAILED(svgContext->CreateBitmap(D2D1::SizeU(size, size), nullptr, 0, properties, &target))) return {};
+    properties.bitmapOptions = D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+    if (FAILED(svgContext->CreateBitmap(D2D1::SizeU(size, size), nullptr, 0, properties, &readback))) return {};
+
+    svgContext->SetTarget(target.Get());
+    svgContext->BeginDraw();
+    svgContext->Clear(D2D1::ColorF(0, 0, 0, 0));
+    svgContext->DrawSvgDocument(svg.Get());
+    HRESULT drawn = svgContext->EndDraw();
+    svgContext->SetTarget(nullptr);
+    if (FAILED(drawn) || FAILED(readback->CopyFromBitmap(nullptr, target.Get(), nullptr))) return {};
+
+    ComPtr<IWICBitmap> image;
+    if (FAILED(wic->CreateBitmap(size, size, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &image))) return {};
+    ComPtr<IWICBitmapLock> lock;
+    UINT stride = 0, bytes = 0;
+    BYTE* pixels = nullptr;
+    if (FAILED(image->Lock(nullptr, WICBitmapLockWrite, &lock)) || FAILED(lock->GetStride(&stride)) ||
+        FAILED(lock->GetDataPointer(&bytes, &pixels)) || bytes < stride * (size - 1) + size * 4) return {};
+    D2D1_MAPPED_RECT mapped{};
+    if (FAILED(readback->Map(D2D1_MAP_OPTIONS_READ, &mapped))) return {};
+    for (UINT row = 0; row < size; ++row)
+        std::memcpy(pixels + row * stride, mapped.bits + row * mapped.pitch, size * 4);
+    readback->Unmap();
+    lock.Reset();
+    return image;
+}
 #include <dwrite_3.h>
 
 bool Gfx::loadUiFont(const std::wstring& path, const wchar_t* family) {

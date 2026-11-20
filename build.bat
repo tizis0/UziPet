@@ -13,7 +13,7 @@ set SRC=src\*.cpp src\core\*.cpp src\pet\*.cpp src\speech\*.cpp src\desk\*.cpp s
 set INC=/Isrc /Isrc\core /Isrc\pet /Isrc\speech /Isrc\desk /Isrc\senses /Isrc\web
 cl /nologo /std:c++20 /O2 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /D_CRT_SECURE_NO_WARNINGS %INC% /Fo:obj\ %SRC% obj\uzi.res /Fe:bin\UziPet.exe ^
   /link /SUBSYSTEM:WINDOWS /MANIFEST:NO user32.lib gdi32.lib d2d1.lib dwrite.lib windowscodecs.lib ole32.lib oleaut32.lib ^
-  shell32.lib shlwapi.lib dwmapi.lib advapi32.lib uuid.lib secur32.lib ws2_32.lib
+  shell32.lib shlwapi.lib dwmapi.lib advapi32.lib uuid.lib secur32.lib ws2_32.lib d3d11.lib
 if errorlevel 1 exit /b 1
 if not exist bin\assets mkdir bin\assets
 copy /y assets\* bin\assets >nul
