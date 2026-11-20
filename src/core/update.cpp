@@ -195,19 +195,24 @@ bool extractEmbedded(const std::wstring& dir) {
     auto u32 = [&]() { uint32_t v; memcpy(&v, d + at, 4); at += 4; return v; };
     auto u16 = [&]() { uint16_t v; memcpy(&v, d + at, 2); at += 2; return v; };
     uint32_t cnt = u32();
-    for (uint32_t i = 0; i < cnt && at < n; i++) {
+    for (uint32_t i = 0; i < cnt; i++) {
+        if (n - at < sizeof(uint16_t)) return false;
         uint16_t ln = u16();
+        if (n - at < ln + sizeof(uint32_t)) return false;
         std::string name((const char*)d + at, ln);
         at += ln;
         uint32_t sz = u32();
-        if (at + sz > n) return false;
+        if (sz > n - at) return false;
         std::wstring path = dir + L"\\" + widen(name);
         for (auto& c : path) if (c == L'/') c = L'\\';
         makeDirs(path.substr(0, path.find_last_of(L'\\')));
-        writeFile(path, std::string((const char*)d + at, sz));
+        if (!writeFile(path, std::string((const char*)d + at, sz))) {
+            logf("assets: cannot extract %s", narrow(path).c_str());
+            return false;
+        }
         at += sz;
     }
-    writeFile(dir + L"\\assets\\version.txt", narrow(UZI_VERSION));
+    if (!writeFile(dir + L"\\assets\\version.txt", narrow(UZI_VERSION))) return false;
     logf("assets extracted: %u files to %s", cnt, narrow(dir).c_str());
     return true;
 }
@@ -216,7 +221,9 @@ void refreshAssets(bool force) {
     std::wstring dir = exeDir();
     std::string mark;
     bool marked = readFile(dir + L"\\assets\\version.txt", mark);
-    if (force || (marked && widen(mark) != UZI_VERSION)) extractEmbedded(dir);
+    bool pythonMissing = GetFileAttributesW((dir + L"\\python\\python.exe").c_str()) == INVALID_FILE_ATTRIBUTES ||
+                         GetFileAttributesW((dir + L"\\python\\embedded-version.txt").c_str()) == INVALID_FILE_ATTRIBUTES;
+    if (force || pythonMissing || (marked && widen(mark) != UZI_VERSION)) extractEmbedded(dir);
 }
 
 bool selfInstall() {
@@ -244,7 +251,7 @@ bool selfInstall() {
             return false;
         }
     }
-    extractEmbedded(dir);
+    if (!extractEmbedded(dir)) return false;
     wchar_t* pr = nullptr;
     if (!test && SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Programs, 0, nullptr, &pr))) {
         ComPtr<IShellLinkW> sl;
