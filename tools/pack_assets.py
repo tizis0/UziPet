@@ -1,10 +1,7 @@
 # Ассеты и расширение кладутся внутрь UziPet.exe: один файл — и программа, и установщик, и обновление.
 # Пишет obj/assets.pak (свой простой формат), obj/manifest.json (версия и «что нового») и obj/uzi.rc.
 # Формат pak: u32 число файлов, дальше на каждый: u16 длина имени, имя в utf-8, u32 размер, байты.
-import hashlib, io, json, os, re, struct
-from pathlib import Path
-from urllib.request import urlopen
-from zipfile import ZipFile
+import json, os, re, struct
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 obj = os.path.join(root, 'obj')
@@ -14,26 +11,6 @@ notes_path = os.path.join(root, 'notes.txt')
 notes = [l.strip() for l in open(notes_path, encoding='utf-8-sig')] if os.path.exists(notes_path) else []
 notes = [n for n in notes if n]
 
-def python_runtime():
-    # Official Windows x64 embeddable distribution, including its license.
-    version = '3.14.10'
-    sha256 = '90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159'
-    name = f'python-{version}-embed-amd64.zip'
-    cache = Path(obj) / name
-    data = cache.read_bytes() if cache.is_file() else b''
-    if hashlib.sha256(data).hexdigest() != sha256:
-        with urlopen(f'https://www.python.org/ftp/python/{version}/{name}', timeout=45) as response:
-            data = response.read()
-        if hashlib.sha256(data).hexdigest() != sha256:
-            raise ValueError(f'SHA-256 mismatch for {name}')
-        cache.write_bytes(data)
-    with ZipFile(io.BytesIO(data)) as archive:
-        for entry in archive.infolist():
-            if not entry.is_dir():
-                yield 'python/' + entry.filename, archive.read(entry)
-    yield 'python/embedded-version.txt', version.encode('ascii')
-
-
 files = []
 for top in ('assets', 'extension'):
     base = os.path.join(root, top)
@@ -42,13 +19,13 @@ for top in ('assets', 'extension'):
             if n == 'token.json' or n.endswith('.log'):
                 continue
             full = os.path.join(d, n)
-            files.append((os.path.relpath(full, root).replace('\\', '/'), Path(full).read_bytes()))
-files.extend(python_runtime())
+            files.append((os.path.relpath(full, root).replace('\\', '/'), full))
 
 with open(os.path.join(obj, 'assets.pak'), 'wb') as f:
     f.write(struct.pack('<I', len(files)))
-    for name, data in files:
+    for name, full in files:
         nb = name.encode('utf-8')
+        data = open(full, 'rb').read()
         f.write(struct.pack('<H', len(nb)) + nb + struct.pack('<I', len(data)) + data)
 
 json.dump({'app': 'UziPet', 'version': ver, 'notes': notes}, open(os.path.join(obj, 'manifest.json'), 'w', encoding='utf-8'),

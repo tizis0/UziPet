@@ -221,9 +221,7 @@ void refreshAssets(bool force) {
     std::wstring dir = exeDir();
     std::string mark;
     bool marked = readFile(dir + L"\\assets\\version.txt", mark);
-    bool pythonMissing = GetFileAttributesW((dir + L"\\python\\python.exe").c_str()) == INVALID_FILE_ATTRIBUTES ||
-                         GetFileAttributesW((dir + L"\\python\\embedded-version.txt").c_str()) == INVALID_FILE_ATTRIBUTES;
-    if (force || pythonMissing || (marked && widen(mark) != UZI_VERSION)) extractEmbedded(dir);
+    if (force || (marked && widen(mark) != UZI_VERSION)) extractEmbedded(dir);
 }
 
 bool selfInstall() {
