@@ -1,5 +1,6 @@
 #pragma once
 #include "gfx.h"
+#include "moddialog.h"
 
 struct Phrases {
     std::vector<std::string> keys;
@@ -65,10 +66,21 @@ struct Bubble {
 
     bool input = false;
     std::wstring inputText;
+    struct ModChoice { std::string owner, id; CachedBitmap icon; };
+    std::vector<ModChoice> modChoices;
+    std::string formOwner;
+    ModDialog form;
+    bool formReplace = true;
+    size_t formFocus = 0;
+    std::vector<D2D1_RECT_F> formRects;
 
     void say(const std::wstring& s);
     void ask(const std::wstring& s, const std::vector<std::wstring>& ch, const std::string& id, float wait = 25.f);
     void askInput(const std::wstring& s, const std::wstring& initial, const std::vector<std::wstring>& ch, const std::string& id);
+    void askForm(std::string owner, ModDialog data);
+    bool selectFormField(V2 p);
+    void typeFormChar(wchar_t ch);
+    bool modForm() const { return active && !formOwner.empty(); }
     bool asking() const { return active && !choices.empty(); }
     float holdT = 0, readT = 0;
     void hold() { holdT = std::max(holdT, readT); }

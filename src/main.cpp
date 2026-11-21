@@ -3,6 +3,7 @@
 #include <ole2.h>
 #include "webnest.h"
 #include "settingsui.h"
+#include "modsui.h"
 #include "items.h"
 #include "intro.h"
 #include "update.h"
@@ -19,6 +20,8 @@
 static App g_app;
 static Pet* g_pet = nullptr;
 static Surface g_surf;
+static Mods g_mods;
+static ModsUi g_modsUi;
 static UINT g_msgTaskbarCreated = 0;
 static NOTIFYICONDATAW g_nid{};
 static HICON g_trayIcon = nullptr;
@@ -36,7 +39,7 @@ static double g_dropAt = -1;
 enum { ID_COME = 100, ID_SAY, ID_SIZE_S, ID_SIZE_M, ID_SIZE_L, ID_ICONS, ID_TALK, ID_RESTORE, ID_AUTOSTART, ID_QUIT, ID_NAME, ID_CLOSEEXP, ID_RAILGUN,
        ID_WEB, ID_SHY, ID_EXT, ID_SETTINGS, ID_DBG_PERF, ID_DBG_PARTS, ID_DBG_LOG, ID_DBG_SNAP, ID_DBG_EN_M, ID_DBG_EN_P, ID_DBG_REL_M,
        ID_DBG_REL_P, ID_THEME_L, ID_THEME_D, ID_HARDCORE, ID_DBG_FOOD_M, ID_DBG_FOOD_P, ID_DBG_PARCEL, ID_GENDER_M, ID_GENDER_F,
-       ID_DBG_INTRO, ID_DBG_GROW, ID_DEV, ID_SOLVER, ID_DBG_SOLVER, ID_NOTES, ID_GAMEREACT, ID_ICONS_UNDO, ID_REPLIES, ID_HUGCURSOR, ID_ICONS_UNDO_MENU };
+       ID_DBG_INTRO, ID_DBG_GROW, ID_DEV, ID_SOLVER, ID_DBG_SOLVER, ID_NOTES, ID_GAMEREACT, ID_ICONS_UNDO, ID_REPLIES, ID_HUGCURSOR, ID_ICONS_UNDO_MENU, ID_MODS };
 enum { ID_ICONS_UNDO_OLD = 900 };
 static bool g_dbgPerf = false, g_dbgParts = false;
 static bool g_introPending = false;
@@ -431,6 +434,12 @@ static void onCommand(int id) {
         a.settings.save();
         break;
     case ID_SETTINGS: openSettings(); break;
+    case ID_MODS:
+        if (!g_snapMode && !a.world.fake) {
+            g_settings.close();
+            g_modsUi.open(a, g_settings.hwnd ? g_settings.hwnd : a.hwnd, g_mods);
+        }
+        break;
     case ID_HARDCORE:
         a.settings.hardcore = !a.settings.hardcore;
         a.settings.hardcoreAsked = true;
@@ -647,6 +656,7 @@ static void openSettings(bool show) {
     add(1, SetRow::Toggle, L"Запускать с Windows", {}, {ID_AUTOSTART});
     add(1, SetRow::Toggle, L"Записки на столе", {}, {ID_NOTES});
     add(1, SetRow::Toggle, L"Реакции на игры", {}, {ID_GAMEREACT});
+    add(1, SetRow::Buttons, L"", {L"Моды…"}, {ID_MODS});
     add(1, SetRow::Buttons, L"Браузер", {L"Подключить"}, {ID_EXT});
     {
         std::wstring snap = a.icons.ok() ? a.icons.layoutBefore() : L"";
@@ -968,6 +978,28 @@ static bool kissAim() {
 
 static double g_byeAt = -1;
 
+static void answerModForm(const std::string& button) {
+    auto& b = g_app.bubble;
+    g_mods.dialogAnswered(b.formOwner, b.form, button);
+    b.close();
+}
+
+static void petBubbleAnswer(int choice) {
+    auto& b = g_app.bubble;
+    if (b.modForm()) {
+        if ((size_t)choice < b.form.buttons.size()) answerModForm(b.form.buttons[choice].id);
+        return;
+    }
+    if ((size_t)choice < b.modChoices.size() && !b.modChoices[choice].owner.empty()) {
+        auto& item = b.modChoices[choice];
+        g_mods.menuSelected(item.owner, item.id);
+        b.close();
+        if (g_pet->st == St::Idle && g_pet->stDur >= 1e9f) g_pet->goIdle();
+        return;
+    }
+    g_pet->answer(std::string(b.askId), choice);
+}
+
 static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     App& a = g_app;
     switch (msg) {
@@ -976,6 +1008,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return TRUE;
     case WM_ENDSESSION:
         if (wp) {
+            g_mods.stop();
             g_pet->deskHomeNow("session end");
             g_pet->dropCarried(false);
             a.icons.flush(1.0);
@@ -992,13 +1025,41 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_MOUSEACTIVATE:
         return a.bubble.input ? MA_ACTIVATE : MA_NOACTIVATE;
+    case WM_KEYDOWN:
+        if (a.bubble.modForm()) {
+            auto& b = a.bubble;
+            if (wp == VK_ESCAPE) answerModForm(b.form.cancel);
+            else if (!b.form.fields.empty() && (wp == VK_TAB || wp == VK_LEFT || wp == VK_RIGHT)) {
+                size_t count = b.form.fields.size();
+                bool reverse = wp == VK_LEFT || (wp == VK_TAB && (GetKeyState(VK_SHIFT) & 0x8000));
+                b.formFocus = (b.formFocus + (reverse ? count - 1 : 1)) % count;
+                b.formReplace = true;
+            }
+            return 0;
+        }
+        break;
     case WM_CHAR:
         if (a.bubble.input && a.bubble.asking()) {
             wchar_t ch = (wchar_t)wp;
+            if (a.bubble.modForm()) {
+                auto& b = a.bubble;
+                if (ch == L'\r') petBubbleAnswer(0);
+                else if (ch == 0x16 && OpenClipboard(h)) {
+                    if (HANDLE hd = GetClipboardData(CF_UNICODETEXT)) {
+                        if (const auto* text = static_cast<const wchar_t*>(GlobalLock(hd))) {
+                            for (size_t i = 0; i < 256 && text[i] >= 32; ++i) b.typeFormChar(text[i]);
+                            GlobalUnlock(hd);
+                        }
+                    }
+                    CloseClipboard();
+                } else {
+                    b.typeFormChar(ch);
+                }
+                return 0;
+            }
             std::wstring& t = a.bubble.inputText;
             if (ch == L'\r') {
-                std::string id = a.bubble.askId;
-                g_pet->answer(id, 0);
+                petBubbleAnswer(0);
             } else if (ch == L'\b') {
                 if (!t.empty()) t.pop_back();
             } else if (ch == 0x16 && OpenClipboard(h)) {
@@ -1020,11 +1081,9 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         V2 local = cursorPos() - a.winOrigin;
         if (a.bubble.hit(local)) {
             if (a.bubble.asking()) {
+                if (a.bubble.selectFormField(local)) return 0;
                 int ch = a.bubble.choiceAt(local);
-                if (ch >= 0) {
-                    std::string id = a.bubble.askId;
-                    g_pet->answer(id, ch);
-                }
+                if (ch >= 0) petBubbleAnswer(ch);
                 return 0;
             }
             a.bubble.hide();
@@ -1066,7 +1125,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (was) g_pet->endDrag();
-        else if (pressed) g_pet->poke();
+        else if (pressed && !g_mods.clicked()) g_pet->poke();
         return 0;
     }
     case WM_CAPTURECHANGED:
@@ -1086,7 +1145,26 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         break;
     case WM_RBUTTONUP:
-        if (!g_pet->feeding) g_pet->openTalk();
+        if (!g_pet->feeding) {
+            if (a.bubble.modForm()) answerModForm("");
+            g_pet->openTalk();
+            auto& b = a.bubble;
+            if (b.asking() && (b.askId == "talk" || b.askId == "talkBaby" || b.askId == "talkSleep") && b.modChoices.empty()) {
+                b.modChoices.resize(b.choices.size());
+                for (const auto& mod : g_mods.list()) {
+                    if (!mod.ready) continue;
+                    for (const auto& item : mod.menu) {
+                        if (b.choices.size() >= 14) break;
+                        Bubble::ModChoice choice;
+                        choice.owner = mod.id;
+                        choice.id = item.id;
+                        if (!item.icon.empty()) choice.icon.src = a.gfx.loadIcon(item.icon);
+                        b.choices.push_back(item.label);
+                        b.modChoices.push_back(std::move(choice));
+                    }
+                }
+            }
+        }
         return 0;
     case WM_TRAY:
         if (lp == WM_RBUTTONUP || lp == WM_CONTEXTMENU) showMenu();
@@ -1153,6 +1231,8 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (msg == WM_DISPLAYCHANGE && g_pet) g_pet->deskDisplayChanged();
         return 0;
     case WM_DESTROY:
+        g_modsUi.close();
+        g_mods.stop();
         g_pet->vit.save();
         g_pet->daySave();
         a.phrases.saveState();
@@ -1400,7 +1480,8 @@ static void renderFrame(Surface& surf, V2 wo, D2D1_COLOR_F clear = {0, 0, 0, 0},
     }
     DrawCtx bc = c;
     bc.s = a.dpi * (1.f + (a.settings.scale - 1.f) * 0.35f);
-    a.bubble.draw(bc, g_pet->bubbleTip() - wo, g_pet->headC - wo, g_pet->headR, area, D2D1::RectF(0, 0, (float)surf.w, (float)surf.h));
+    a.bubble.draw(bc, g_pet->bubbleTip() - wo, g_pet->headC - wo, g_pet->headR, area,
+                  D2D1::RectF(0, 0, (float)surf.w, (float)surf.h));
     if (g_dbgParts && g_pet->active == 0) {
         const Rig& R = a.rig;
         for (size_t i = 0; i < R.parts.size() && i < a.inst.world.size(); i++) {
@@ -1474,6 +1555,43 @@ static void byeHold(float secs) {
 
 static void frame(float dt) {
     App& a = g_app;
+    g_mods.relationship(g_pet->tier());
+    static const Mods::Host modHost{
+        [](const std::wstring& text, bool interrupt) {
+            auto& b = g_app.bubble;
+            if (!g_pet->vit.dead && !g_pet->vit.inBin && !introRunning() &&
+                ((!g_hidden && !b.asking()) || (interrupt && !b.modForm()))) b.say(text);
+        },
+        [](const std::string& owner, ModDialog dialog) {
+            if (g_pet->vit.dead || g_pet->vit.inBin || introRunning()) return;
+            g_app.bubble.askForm(owner, std::move(dialog));
+            SetForegroundWindow(g_app.hwnd);
+        },
+        [](const std::string& owner, const std::string& id, const std::wstring& status) {
+            auto& b = g_app.bubble;
+            if (b.formOwner == owner && b.form.id == id) b.form.status = status;
+        },
+        [](const std::string& owner, const std::string& id) {
+            auto& b = g_app.bubble;
+            if (b.formOwner == owner && b.form.id == id) b.close();
+        }
+    };
+    g_mods.tick(modHost);
+    const auto& mods = g_mods.list();
+    if (a.bubble.modForm() && std::none_of(mods.begin(), mods.end(), [&](const Mods::Mod& mod) {
+        return mod.ready && mod.id == a.bubble.formOwner;
+    })) a.bubble.close();
+    auto pacing = std::find_if(mods.begin(), mods.end(), [](const Mods::Mod& mod) { return mod.ready && mod.paceSpeed > 0; });
+    bool modPacing = pacing != mods.end() && !g_pet->vit.dead && !introRunning();
+    float paceSpeed = modPacing ? pacing->paceSpeed : 0;
+    bool paceAcross = modPacing && pacing->paceAcrossMonitors;
+    static bool pacingLastFrame = false;
+    if (modPacing && !pacingLastFrame) {
+        g_pet->feeding = false;
+        g_pet->gameStop("mod movement");
+    }
+    pacingLastFrame = modPacing;
+    g_modsUi.update();
     static float worldT = 0, iconsT = 0, fsT = 0, topT = 0, perfT = 0;
     static double perfAcc = 0, pWorld = 0, pUpd = 0, pDraw = 0, pPres = 0, pMax = 0, pIcons = 0;
     static int perfN = 0;
@@ -1550,7 +1668,7 @@ static void frame(float dt) {
         QUERY_USER_NOTIFICATION_STATE q;
         bool fs0 = SUCCEEDED(SHQueryUserNotificationState(&q)) &&
                    (q == QUNS_BUSY || q == QUNS_RUNNING_D3D_FULL_SCREEN || q == QUNS_PRESENTATION_MODE);
-        bool raw = !g_settings.visible() && !introOverlayShown() && ((fs0 && !a.activity.capture) || (a.activity.fgCovers && a.activity.kind == AppKind::Game));
+        bool raw = !modPacing && !g_settings.visible() && !introOverlayShown() && ((fs0 && !a.activity.capture) || (a.activity.fgCovers && a.activity.kind == AppKind::Game));
         static float rawT = 0;
         rawT = raw ? rawT + 0.5f : 0.f;
         bool fs = g_pet->shouldHide(rawT >= 1.5f);
@@ -1591,6 +1709,7 @@ static void frame(float dt) {
     in.idleSec = (GetTickCount() - li.dwTime) / 1000.0;
 
     double u0 = nowSec();
+    g_pet->scriptedPaceStep(paceSpeed, paceAcross);
     g_pet->update(dt, in);
     static bool clickThrough = false;
     if (g_pet->clickThrough() != clickThrough) {
@@ -2116,6 +2235,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     if (pet.st != St::Fall) pet.spawn(V2((r.left + r.right) * 0.5f, r.top + pet.comH * 1.3f + 10.f));
     a.now = nowSec();
     if (webServe) pet.webServeOnly();
+    g_mods.refresh();
     frame(0.f);
     ShowWindow(a.hwnd, SW_SHOWNOACTIVATE);
 
@@ -2147,6 +2267,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         MsgWaitForMultipleObjectsEx(1, &timer, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
     }
     CloseHandle(timer);
+    g_modsUi.close();
+    g_mods.stop();
     delete a.web;
     a.web = nullptr;
     OleUninitialize();

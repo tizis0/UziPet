@@ -1,17 +1,10 @@
 #include "settingsui.h"
+#include "uistyle.h"
 
 SettingsUi g_settings;
 
-namespace {
-const int kClose = -100;
-const float kW = 880.f;
-
-struct Pal {
-    D2D1_COLOR_F box, line, shadow, card, ink, dim, pill, pillHov, pillLine, off, track, acc, danger;
-};
-
-Pal palette(bool dark) {
-    Pal p;
+UiPalette uiPalette(bool dark) {
+    UiPalette p;
     p.acc = D2D1::ColorF(0.839f, 0.102f, 0.933f, 1);
     if (dark) {
         p.box = D2D1::ColorF(0.07f, 0.05f, 0.10f, 1);
@@ -42,6 +35,10 @@ Pal palette(bool dark) {
     }
     return p;
 }
+
+namespace {
+const int kClose = -100;
+const float kW = 880.f;
 
 float rowH(const SetRow& r) {
     switch (r.kind) {
@@ -177,7 +174,7 @@ void SettingsUi::redraw() {
         mk(fPct, DWRITE_FONT_WEIGHT_BOLD, 13);
     }
     bool dk = dark && dark();
-    Pal P = palette(dk);
+    auto P = uiPalette(dk);
     auto col = [&](D2D1_COLOR_F c, float a = 1.f) {
         br->SetColor(c);
         br->SetOpacity(a);

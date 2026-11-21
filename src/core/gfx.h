@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include <d2d1_3.h>
 
 struct Gfx {
     ComPtr<ID2D1Factory1> d2d;
@@ -11,9 +12,13 @@ struct Gfx {
     bool init();
     bool loadUiFont(const std::wstring& path, const wchar_t* family);
     ComPtr<IWICBitmapSource> loadImage(const std::wstring& path);
+    ComPtr<IWICBitmapSource> loadIcon(const std::wstring& path);
     ComPtr<IWICBitmapSource> scaled(IWICBitmapSource* src, float k, float* kx = nullptr, float* ky = nullptr);
     ComPtr<IWICBitmapSource> fromHBitmap(HBITMAP bmp);
     ComPtr<IWICBitmapSource> darkHalo(IWICBitmapSource* src, int pad, float* edge = nullptr);
+
+private:
+    ComPtr<ID2D1DeviceContext5> svgContext;
 };
 
 struct Surface {

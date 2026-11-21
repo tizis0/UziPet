@@ -117,6 +117,44 @@ void Pet::goWalk(float x, bool off) {
 
 void Pet::goIdle(float minT, float maxT) { setState(St::Idle, randf(minT, maxT)); }
 
+void Pet::scriptedPaceStep(float speed, bool acrossMonitors) {
+    if (speed <= 0) {
+        if (scriptedWalkSpeed > 0 && st == St::Walk) goIdle(1.f, 2.f);
+        scriptedWalkSpeed = 0;
+        return;
+    }
+    if (vit.dead || vit.fatal || dragging || byeOn || (app.bubble.asking() && !app.bubble.modForm())) return;
+    if (st == St::Hide || st == St::Inside) {
+        callBack(lastCursor);
+        return;
+    }
+    if (st == St::Sleep && !carriedAsleep()) wake(true);
+    if (st == St::Walk && scriptedWalkSpeed > 0) {
+        scriptedWalkSpeed = speed;
+        return;
+    }
+    if (st != St::Idle && st != St::Walk && st != St::Sit && st != St::Watch && st != St::LookAround) return;
+    if (!gnd.valid) return;
+    followT = 0;
+    arriveSit = arriveFace = arriveHug = false;
+    float margin = std::min(70.f * S(), (gnd.x1 - gnd.x0) * 0.18f);
+    float left = gnd.x0 + margin, right = gnd.x1 - margin;
+    bool atEdge = std::min(fabsf(left - pos.x), fabsf(right - pos.x)) < 5.f * S();
+    auto& monitors = app.world.mons;
+    if (scriptedWalkSpeed > 0 && atEdge && acrossMonitors && monitors.size() > 1) {
+        int current = app.world.nearestMonitor(pos);
+        const RECT& next = monitors[(current + 1) % monitors.size()].work;
+        float edge = std::min(80.f * S(), (next.right - next.left) * 0.25f);
+        float target = clampf(pos.x, next.left + edge, next.right - edge);
+        if (!goJump(V2(target, (float)next.bottom), 38.f, 90.f))
+            spawn(V2(target, (float)next.top + comH * 2.f));
+        return;
+    }
+    if (right - left < 8.f * S()) return;
+    scriptedWalkSpeed = speed;
+    goWalk(pos.x - left < right - pos.x ? right : left);
+}
+
 void Pet::startFall(V2 v0) {
     vel = v0;
     gnd.valid = false;
@@ -248,7 +286,8 @@ void Pet::update(float dt, const Input& in) {
         if (!groundCheck(dt)) { startFall(V2(facing * 60.f * S(), 0)); break; }
         float dir = signf(walkTarget - pos.x);
         facing = dir > 0 ? 1 : -1;
-        float sp = 80.f * S() * (carriedName.empty() ? 1.f : 0.8f) * (followT > 0 ? 2.2f : 1.f) * runK * lerpf(1.f, 0.45f, hungerK()) * (groggyT > 0 ? 0.6f : 1.f);
+        float speedFactor = scriptedWalkSpeed > 0 ? scriptedWalkSpeed : followT > 0 ? 2.2f : 1.f;
+        float sp = 80.f * S() * (carriedName.empty() ? 1.f : 0.8f) * speedFactor * runK * lerpf(1.f, 0.45f, hungerK()) * (groggyT > 0 ? 0.6f : 1.f);
         float step = sp * dt;
         walkPhase += dt * sp / (9.f * S() * (1.f + 0.5f * (runK - 1.f)));
         if (fabsf(walkTarget - pos.x) <= step && !walkOff) {

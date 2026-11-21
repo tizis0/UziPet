@@ -42,9 +42,8 @@ bool readFile(const std::wstring& path, std::string& out) {
 bool writeFile(const std::wstring& path, const std::string& data) {
     FILE* f = _wfopen(path.c_str(), L"wb");
     if (!f) return false;
-    fwrite(data.data(), 1, data.size(), f);
-    fclose(f);
-    return true;
+    bool written = fwrite(data.data(), 1, data.size(), f) == data.size();
+    return fclose(f) == 0 && written;
 }
 
 std::wstring exeDir() {

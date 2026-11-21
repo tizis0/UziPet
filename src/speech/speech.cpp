@@ -281,10 +281,15 @@ void Bubble::close() {
     choices.clear();
     askId.clear();
     input = false;
+    modChoices.clear();
+    formOwner.clear();
 }
 
 void Bubble::say(const std::wstring& raw) {
     if (raw.empty()) return;
+    input = false;
+    modChoices.clear();
+    formOwner.clear();
     if (held()) logf("bubble: cut '%s' while being read (%.1f of %.1f s)", narrow(text).c_str(), t, holdT);
     dismissed = false;
     text.clear();
@@ -378,6 +383,43 @@ void Bubble::askInput(const std::wstring& s, const std::wstring& initial, const 
     inputText = initial;
 }
 
+void Bubble::askForm(std::string owner, ModDialog data) {
+    std::vector<std::wstring> labels;
+    for (const auto& button : data.buttons) labels.push_back(button.label);
+    ask(data.text, labels, "mod-form", 1e9f);
+    formOwner = std::move(owner);
+    form = std::move(data);
+    formFocus = 0;
+    formReplace = input = true;
+    formRects.clear();
+}
+
+bool Bubble::selectFormField(V2 p) {
+    if (!modForm() || t < typeDur) return false;
+    for (size_t i = 0; i < formRects.size(); ++i) {
+        auto& r = formRects[i];
+        if (p.x < r.left || p.x > r.right || p.y < r.top || p.y > r.bottom) continue;
+        formFocus = i;
+        formReplace = true;
+        return true;
+    }
+    return false;
+}
+
+void Bubble::typeFormChar(wchar_t ch) {
+    if (form.fields.empty()) return;
+    auto& f = form.fields[formFocus];
+    if (ch == L'\b') {
+        if (formReplace) f.value.clear();
+        else if (!f.value.empty()) f.value.pop_back();
+    } else {
+        if (ch < 32 || (f.integer && (ch < L'0' || ch > L'9'))) return;
+        if (formReplace) f.value.clear();
+        if (f.value.size() < f.length) f.value += ch;
+    }
+    formReplace = false;
+}
+
 int Bubble::choiceAt(V2 p) const {
     if (!asking() || t < typeDur) return -1;
     for (size_t i = 0; i < choiceRc.size(); i++) {
@@ -463,26 +505,50 @@ void Bubble::draw(DrawCtx& c, V2 headTop, V2 headC, float headR, D2D1_RECT_F are
     bool grid = choices.size() > 3;
     float cellW = 0;
     if (!choices.empty()) {
-        for (auto& ch : choices) {
+        for (size_t i = 0; i < choices.size(); ++i) {
+            auto& ch = choices[i];
             ComPtr<IDWriteTextLayout> l;
             c.dw->CreateTextLayout(ch.c_str(), (UINT32)ch.size(), btnFmt.Get(), 400.f * s, 100.f, &l);
             DWRITE_TEXT_METRICS bm{};
             l->GetMetrics(&bm);
             bl.push_back(l);
-            bwid.push_back(bm.width + 20 * s);
+            bwid.push_back(bm.width + ((i < modChoices.size() && modChoices[i].icon.src) ? 40 : 20) * s);
             btnsW += bwid.back();
             cellW = std::max(cellW, bwid.back());
         }
         btnsW += btnGap * (choices.size() - 1);
         if (grid) btnsW = cellW * 2 + btnGap;
+        if (modForm()) btnsW = std::max(cellW, 260.f * s);
     }
-    size_t rowsN = grid ? (choices.size() + 1) / 2 : (choices.empty() ? 0 : 1);
+    size_t rowsN = modForm() ? choices.size() : grid ? (choices.size() + 1) / 2 : (choices.empty() ? 0 : 1);
     float contentW = std::max(m.width, btnsW);
     float inputH = input ? 28 * s : 0.f;
+    size_t columns = 0;
+    if (modForm()) {
+        bool compact = std::all_of(form.fields.begin(), form.fields.end(), [](const auto& f) { return f.integer && f.length <= 4; });
+        columns = compact ? form.fields.size() : std::min(size_t(2), form.fields.size());
+        if (compact && columns) {
+            float fieldWidth = 0;
+            for (const auto& field : form.fields) {
+                auto sample = field.label + L"  " + std::wstring(field.length, L'8');
+                ComPtr<IDWriteTextLayout> layout;
+                c.dw->CreateTextLayout(sample.c_str(), (UINT32)sample.size(), btnFmt.Get(), 1000.f * s, 28 * s, &layout);
+                DWRITE_TEXT_METRICS metrics{};
+                if (layout) layout->GetMetrics(&metrics);
+                fieldWidth = std::max(fieldWidth, std::ceil(metrics.widthIncludingTrailingWhitespace + 22 * s));
+            }
+            float available = std::min(area.right, win.right) - std::max(area.left, win.left) - 2 * padX - 8 * s;
+            while (columns > 1 && (fieldWidth + btnGap) * columns - btnGap > available) --columns;
+            contentW = std::max(contentW, (fieldWidth + btnGap) * columns - btnGap);
+        }
+        btnsW = contentW;
+        size_t rows = columns ? (form.fields.size() + columns - 1) / columns : 0;
+        inputH = rows * 28.f * s + (rows > 1 ? (rows - 1) * btnGap : 0) + (form.status.empty() ? 0 : 24.f * s);
+    }
     if (input) contentW = std::max(contentW, 190 * s);
     if (grid) cellW = (contentW - btnGap) / 2;
     float meterH = meters.empty() ? 0.f : 10 * s + btnGap;
-    float bw = contentW + padX * 2, bh = m.height + padY * 2 + meterH + (input ? inputH + btnGap : 0.f) +
+    float bw = contentW + padX * 2, bh = m.height + padY * 2 + meterH + (inputH > 0 ? inputH + btnGap : 0.f) +
                                         (choices.empty() ? 0 : btnGap + rowsN * btnH + (rowsN - 1) * btnGap);
     float gap = 12 * s;
     V2 tip(headTop.x, headTop.y - 4 * s);
@@ -606,7 +672,41 @@ void Bubble::draw(DrawCtx& c, V2 headTop, V2 headC, float headR, D2D1_RECT_F are
     }
 
     float inputGap = 0;
-    if (input) {
+    if (modForm()) {
+        float ia = alpha * clampf((t - typeDur) / 0.2f, 0.f, 1.f);
+        float x = bx + padX, y = by + padY + m.height + meterH + btnGap;
+        if (!form.status.empty()) {
+            c.color(ink, ia);
+            c.rt->DrawTextW(form.status.c_str(), (UINT32)form.status.size(), btnFmt.Get(),
+                            D2D1::RectF(x, y, x + contentW, y + 22 * s), c.br, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            y += 24 * s;
+        }
+        formRects.clear();
+        float width = columns ? (contentW - (columns - 1) * btnGap) / columns : 0;
+        for (size_t i = 0; i < form.fields.size(); ++i) {
+            const auto& field = form.fields[i];
+            float fx = x + (i % columns) * (width + btnGap), fy = y + (i / columns) * (28 * s + btnGap);
+            auto r = D2D1::RectF(fx, fy, fx + width, fy + 28 * s);
+            auto rounded = D2D1::RoundedRect(r, 8 * s, 8 * s);
+            c.color(pill, ia);
+            c.rt->FillRoundedRectangle(rounded, c.br);
+            c.color(formFocus == i ? acc : pillLine, ia);
+            c.rt->DrawRoundedRectangle(rounded, c.br, 1.8f * s);
+            std::wstring label = field.label + L"  " + field.value;
+            c.color(ink, ia);
+            ComPtr<IDWriteTextLayout> labelLayout;
+            c.dw->CreateTextLayout(label.c_str(), (UINT32)label.size(), btnFmt.Get(),
+                                   std::max(1.f, width - 16 * s), 28 * s, &labelLayout);
+            if (labelLayout) {
+                labelLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                labelLayout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                c.rt->DrawTextLayout({fx + 9 * s, fy}, labelLayout.Get(), c.br, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+            auto a = popM.TransformPoint({r.left, r.top}), b = popM.TransformPoint({r.right, r.bottom});
+            formRects.push_back(D2D1::RectF(a.x, a.y, b.x, b.y));
+        }
+        inputGap = inputH > 0 ? inputH + btnGap : 0;
+    } else if (input) {
         float ia = alpha * clampf((t - typeDur) / 0.2f, 0.f, 1.f);
         D2D1_RECT_F ir = D2D1::RectF(bx + padX, by + padY + m.height + meterH + btnGap, bx + padX + contentW, by + padY + m.height + meterH + btnGap + inputH);
         auto irr = D2D1::RoundedRect(ir, 8 * s, 8 * s);
@@ -639,7 +739,10 @@ void Bubble::draw(DrawCtx& c, V2 headTop, V2 headC, float headR, D2D1_RECT_F are
         bool twoWay = choices.size() <= 2;
         for (size_t i = 0; i < choices.size(); i++) {
             float w = grid ? cellW : bwid[i];
-            if (grid) {
+            if (modForm()) {
+                w = btnsW;
+                y = y0 + i * (btnH + btnGap);
+            } else if (grid) {
                 x = x0 + (i % 2) * (cellW + btnGap);
                 y = y0 + (i / 2) * (btnH + btnGap);
                 if (i + 1 == choices.size() && i % 2 == 0) x = x0 + (cellW + btnGap) * 0.5f;
@@ -659,8 +762,15 @@ void Bubble::draw(DrawCtx& c, V2 headTop, V2 headC, float headR, D2D1_RECT_F are
             DWRITE_TEXT_METRICS bm{};
             bl[i]->GetMetrics(&bm);
             c.color(filled ? D2D1::ColorF(1, 1, 1, 1) : ink, ba);
-            c.rt->DrawTextLayout(D2D1::Point2F(r.left + (w - bm.width) * 0.5f, r.top + (btnH - bm.height) * 0.5f), bl[i].Get(), c.br);
-            if (!grid) x += bwid[i] + btnGap;
+            float labelX = r.left + (w - bm.width) * 0.5f;
+            if (i < modChoices.size()) {
+                if (auto* icon = modChoices[i].icon.get(c)) {
+                    labelX += 9 * s;
+                    c.rt->DrawBitmap(icon, D2D1::RectF(labelX - 18 * s, r.top + 5 * s, labelX - 4 * s, r.bottom - 5 * s), ba);
+                }
+            }
+            c.rt->DrawTextLayout(D2D1::Point2F(labelX, r.top + (btnH - bm.height) * 0.5f), bl[i].Get(), c.br);
+            if (!grid && !modForm()) x += bwid[i] + btnGap;
         }
         for (auto& r : choiceRc) {
             D2D1_POINT_2F a = popM.TransformPoint({r.left, r.top});
